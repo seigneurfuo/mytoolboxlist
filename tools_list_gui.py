@@ -1,6 +1,8 @@
+#!/bin/env python3
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.uic import loadUi
-from PyQt5.QtWidgets import  QMainWindow, QMessageBox, QListWidgetItem, QTableWidgetItem
+from PyQt5.QtWidgets import  QMainWindow, QMessageBox, QTableWidgetItem
 
 import sys
 import os
@@ -12,20 +14,24 @@ import configparser
 import re
 
 # Date de création: 2020.08.21
-# Date de modification: 2020.08.21
+# Date de modification: 2020.08.25
 
 class MainWindow(QMainWindow):
-
     def __init__(self):
         super(MainWindow, self).__init__()
-
-
 
         # Config
         config = configparser.ConfigParser()
         config.read("config.ini")
 
         self.applications_path = config["config"]["root"]
+        if not os.path.exists(self.applications_path):
+            msg = "Le dossier <b>{}</b> n'existe pas.".format(self.applications_path)
+            qmessagbox = QMessageBox(text=msg)
+            qmessagbox.setWindowTitle("Erreur")
+            #qmessagbox.setText("Erreur problème d'extraction")
+            qmessagbox.exec()
+
         self.tmp_folder_path = config["config"]["tmp"]
         self.archive_extension = config["config"]["archive_extension"]
 
@@ -42,6 +48,7 @@ class MainWindow(QMainWindow):
 
     def init_events(self):
         self.pushButton.clicked.connect(self.on_launch_button_click)
+        self.lineEdit.textChanged.connect(self.on_search_lineEdit_content_changed)
 
     def get_applications_list(self):
         ret_list = []
@@ -64,13 +71,12 @@ class MainWindow(QMainWindow):
         
         for index, application in enumerate(applications):
                 application_name = os.path.basename(application).strip(self.archive_extension)
-
                 # On affiche le chemin et on supprime lechemin complet
-                application_folder = application.replace("\\", "/").replace(self.applications_path, "")
+                application_folder = application.replace("\\", "/")
+                foldername = os.path.basename(os.path.dirname(application))
 
                 self.tableWidget.setItem(index, 0, QTableWidgetItem(application_name))
-                self.tableWidget.setItem(index, 1, QTableWidgetItem(application_folder))
-
+                self.tableWidget.setItem(index, 1, QTableWidgetItem(foldername))
                 #self.tableWidget.setItem(id, 2, QTableWidgetItem(planningEpisodeId))
 
 
@@ -79,12 +85,16 @@ class MainWindow(QMainWindow):
 
     def on_launch_button_click(self):
         current_row = self.tableWidget.currentRow()
-        application_zip = self.applications_list[current_row]
+        if current_row != -1:
+            application_zip = self.applications_list[current_row]
 
-        application_tmp_dir = self.extract(application_zip)
+            application_tmp_dir = self.extract(application_zip)
+            if self.checkBox.isChecked() and application_tmp_dir:
+                open_file(application_tmp_dir)
 
-        if self.checkBox.isChecked() and application_tmp_dir:
-            open_file(application_tmp_dir)
+    def on_search_lineEdit_content_changed(self):
+        print(self.lineEdit.text())
+        text = self.lineEdit.text()
 
     def on_open_terminal_button_click(self):
         current_row = self.tableWidget.currentRow()
