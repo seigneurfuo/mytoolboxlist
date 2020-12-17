@@ -1,8 +1,7 @@
 #!/bin/env python3
 
-from PyQt5.QtWidgets import QApplication
-from PyQt5.uic import loadUi
-from PyQt5.QtWidgets import  QMainWindow, QMessageBox, QTableWidgetItem
+# Date de création: 2020.08.21
+# Date de modification: 2020.08.25
 
 import sys
 import os
@@ -13,8 +12,16 @@ import subprocess
 import configparser
 import re
 
-# Date de création: 2020.08.21
-# Date de modification: 2020.08.25
+from PyQt5.QtWidgets import QApplication
+from PyQt5.uic import loadUi
+from PyQt5.QtWidgets import  QMainWindow, QMessageBox, QTableWidgetItem
+from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot
+
+class ExtractArchiveWorker(QRunnable):
+    @pyqtSlot()
+    def run(self):
+        pass
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -34,6 +41,10 @@ class MainWindow(QMainWindow):
 
         self.tmp_folder_path = config["config"]["tmp"]
         self.archive_extension = config["config"]["archive_extension"]
+
+        self.thread_pool = QThreadPool()
+
+        self.search_label = ""
 
         self.init_ui()
         self.init_events()
@@ -93,8 +104,9 @@ class MainWindow(QMainWindow):
                 open_file(application_tmp_dir)
 
     def on_search_lineEdit_content_changed(self):
-        print(self.lineEdit.text())
-        text = self.lineEdit.text()
+        self.search_label = self.lineEdit.text()
+
+
 
     def on_open_terminal_button_click(self):
         current_row = self.tableWidget.currentRow()
