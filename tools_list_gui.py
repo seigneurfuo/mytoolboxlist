@@ -28,8 +28,9 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__()
 
         # Config
+        config_file_path = os.path.join(os.path.dirname(__file__), "config.ini")
         config = configparser.ConfigParser()
-        config.read("config.ini")
+        config.read(config_file_path)
 
         self.applications_path = config["config"]["root"]
         if not os.path.exists(self.applications_path):
