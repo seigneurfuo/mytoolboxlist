@@ -1,7 +1,7 @@
 #!/bin/env python3
 
 # Date de création: 2020.08.21
-# Date de modification: 2020.08.25
+# Date de modification: 2021.08.05
 
 import sys
 import os
@@ -15,7 +15,7 @@ import re
 from PyQt5.QtWidgets import QApplication
 from PyQt5.uic import loadUi
 from PyQt5.QtWidgets import  QMainWindow, QMessageBox, QTableWidgetItem
-from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot
+from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot, Qt
 
 class ExtractArchiveWorker(QRunnable):
     @pyqtSlot()
@@ -87,10 +87,10 @@ class MainWindow(QMainWindow):
                 application_folder = application.replace("\\", "/")
                 foldername = os.path.basename(os.path.dirname(application))
 
-                self.tableWidget.setItem(index, 0, QTableWidgetItem(application_name))
+                item = QTableWidgetItem(application_name)
+                item.setData(Qt.UserRole, application)
+                self.tableWidget.setItem(index, 0, item)
                 self.tableWidget.setItem(index, 1, QTableWidgetItem(foldername))
-                #self.tableWidget.setItem(id, 2, QTableWidgetItem(planningEpisodeId))
-
 
         # Taille de cellules s'adaptant au contenu
         self.tableWidget.resizeColumnsToContents()
@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
     def on_launch_button_click(self):
         current_row = self.tableWidget.currentRow()
         if current_row != -1:
-            application_zip = self.applications_list[current_row]
+            application_zip = self.tableWidget.currentItem().data(Qt.UserRole)
 
             application_tmp_dir = self.extract(application_zip)
             if self.checkBox.isChecked() and application_tmp_dir:
