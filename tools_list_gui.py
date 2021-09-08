@@ -14,8 +14,9 @@ import re
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.uic import loadUi
-from PyQt5.QtWidgets import  QMainWindow, QMessageBox, QTableWidgetItem
+from PyQt5.QtWidgets import QMainWindow, QMessageBox, QTableWidgetItem
 from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot, Qt
+
 
 class ExtractArchiveWorker(QRunnable):
     @pyqtSlot()
@@ -37,11 +38,12 @@ class MainWindow(QMainWindow):
             msg = "Le dossier <b>{}</b> n'existe pas.".format(self.applications_path)
             qmessagbox = QMessageBox(text=msg)
             qmessagbox.setWindowTitle("Erreur")
-            #qmessagbox.setText("Erreur problème d'extraction")
+            # qmessagbox.setText("Erreur problème d'extraction")
             qmessagbox.exec()
 
         self.tmp_folder_path = config["config"]["tmp"]
         self.archive_extension = config["config"]["archive_extension"]
+        self.metadata_file_extension = config["config"]["metadata_file_extension"]
 
         self.thread_pool = QThreadPool()
 
@@ -60,7 +62,7 @@ class MainWindow(QMainWindow):
 
     def init_events(self):
         self.pushButton.clicked.connect(self.on_launch_button_click)
-        self.lineEdit.textChanged.connect(self.on_search_lineEdit_content_changed)
+        self.lineEdit.textChanged.connect(self.on_search_lineedit_content_changed)
 
     def get_applications_list(self):
         ret_list = []
@@ -71,26 +73,56 @@ class MainWindow(QMainWindow):
             for filename in human_sort(filenames):
                 if filename.endswith(filters):
                     file_path = os.path.join(root, filename)
-                    ret_list.append(file_path)
+
+                    application = self.get_application_metadata(file_path)
+                    ret_list.append(application)
 
         return ret_list
+
+    def get_application_metadata(self, file_path):
+        foldername = os.path.basename(os.path.dirname(file_path))
+        application_name = os.path.basename(file_path).removesuffix(self.archive_extension) # Spécifique Python 3.9 !
+        application = \
+        {
+            "filepath": file_path,
+            "foldername": foldername,
+            "name": application_name,
+            "description": "",
+            "os": ""
+        }
+
+        # Si on à des fichier de métadonnées on le charge ici
+        metadata_filepath = file_path.removesuffix(self.archive_extension) + self.metadata_file_extension  # Spécifique Python 3.9 !
+        if os.path.isfile(metadata_filepath):
+            try:
+                metadata = configparser.ConfigParser()
+                metadata.read(metadata_filepath)
+                # Spécifique Python 3.9 !
+
+                application |= \
+                {
+                    #"name":         metadata["software"]["name"],
+                    "description":  metadata["software"]["description"],
+                    "os":           metadata["software"]["os"]
+                }
+
+            except:
+                pass
+
+        return application
 
     def fill_table(self):
         applications = self.get_applications_list()
 
         self.tableWidget.clearContents()
         self.tableWidget.setRowCount(len(applications))
-        
-        for index, application in enumerate(applications):
-                application_name = os.path.basename(application).strip(self.archive_extension)
-                # On affiche le chemin et on supprime lechemin complet
-                application_folder = application.replace("\\", "/")
-                foldername = os.path.basename(os.path.dirname(application))
 
-                item = QTableWidgetItem(application_name)
-                item.setData(Qt.UserRole, application)
-                self.tableWidget.setItem(index, 0, item)
-                self.tableWidget.setItem(index, 1, QTableWidgetItem(foldername))
+        for index, application in enumerate(applications):
+            item = QTableWidgetItem(application["name"])
+            item.setData(Qt.UserRole, application["filepath"])
+            self.tableWidget.setItem(index, 0, item)
+            self.tableWidget.setItem(index, 1, QTableWidgetItem(application["foldername"]))
+            self.tableWidget.setItem(index, 2, QTableWidgetItem(application["description"]))
 
         # Taille de cellules s'adaptant au contenu
         self.tableWidget.resizeColumnsToContents()
@@ -104,10 +136,8 @@ class MainWindow(QMainWindow):
             if self.checkBox.isChecked() and application_tmp_dir:
                 open_file(application_tmp_dir)
 
-    def on_search_lineEdit_content_changed(self):
+    def on_search_lineedit_content_changed(self):
         self.search_label = self.lineEdit.text()
-
-
 
     def on_open_terminal_button_click(self):
         current_row = self.tableWidget.currentRow()
@@ -122,7 +152,7 @@ class MainWindow(QMainWindow):
 
         # Création du dossier de l'application
         if os.path.exists(application_tmp_dir):
-            shutil.rmtree(application_tmp_dir) 
+            shutil.rmtree(application_tmp_dir)
 
         else:
             os.makedirs(application_tmp_dir)
@@ -144,6 +174,7 @@ class MainWindow(QMainWindow):
 
             return None
 
+
 def open_file(path):
     if platform.system() == "Windows":
         os.startfile(path)
@@ -152,20 +183,23 @@ def open_file(path):
     else:
         subprocess.Popen(["xdg-open", path])
 
+
 def human_sort(elements):
     convert = lambda text: int(text) if text.isdigit() else text
-    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ]
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
     elements.sort(key=alphanum_key)
 
     return elements
 
+
 def main():
     __application_name__ = "Liste des outils"
-    __version__ = "0.2"
+    __version__ = "2021.09.08"
 
     application = QApplication(sys.argv)
     mainwindow = MainWindow()
-    mainwindow.setWindowTitle ("Liste des outils - {}".format(__version__))
+    mainwindow.setWindowTitle("Liste des outils - {}".format(__version__))
     sys.exit(application.exec_())
+
 
 main()
