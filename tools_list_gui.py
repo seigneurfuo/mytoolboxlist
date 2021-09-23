@@ -28,13 +28,14 @@ class ExtractArchiveWorkerSignals(QObject):
     current_file_progression = pyqtSignal(int) # pourcentage actuel
 
 class ExtractArchiveWorker(QRunnable):
-    def __init__(self, tmp_folder_path, archive_extension, application_object):
+    def __init__(self, tmp_folder_path, archive_extension, application_object, open_folder_after_extract):
         super(ExtractArchiveWorker, self).__init__()
         self.signals = ExtractArchiveWorkerSignals()
 
         self.tmp_folder_path = tmp_folder_path
         self.archive_extension = archive_extension
         self.application_object = application_object
+        self.open_folder_after_extract = open_folder_after_extract
 
     @pyqtSlot()
     def run(self):
@@ -62,6 +63,9 @@ class ExtractArchiveWorker(QRunnable):
                     self.signals.current_file_progression.emit(percentage)
 
                 print("Terminé !")
+
+                if self.open_folder_after_extract:
+                    open_file(application_tmp_dir)
 
 
         except(IOError, zipfile.BadZipfile) as e:
@@ -96,6 +100,7 @@ class MainWindow(QMainWindow):
         self.tmp_folder_path = config["config"]["tmp"]
         self.archive_extension = config["config"]["archive_extension"]
         self.metadata_file_extension = config["config"]["metadata_file_extension"]
+        self.open_folder_after_extract = config["config"]["open_folder_after_extract"]
 
         self.thread_pool = QThreadPool()
 
@@ -111,6 +116,8 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         loadUi(os.path.join(os.path.dirname(__file__), "gui.ui"), self)
+        # En fonction du fichier de config, on cohe cette case ou pas
+        self.checkBox.setChecked(bool(int(self.open_folder_after_extract)))
 
     def init_events(self):
         self.pushButton.clicked.connect(self.on_launch_button_click)
@@ -183,17 +190,13 @@ class MainWindow(QMainWindow):
     def on_launch_button_click(self):
         current_row = self.tableWidget.currentRow()
         if current_row != -1:
+            open_folder_after_extract = self.checkBox.isChecked()
             application_object = self.tableWidget.currentItem().data(Qt.UserRole)
-
-            worker = ExtractArchiveWorker(self.tmp_folder_path, self.archive_extension, application_object)
+            worker = ExtractArchiveWorker(self.tmp_folder_path, self.archive_extension, application_object, open_folder_after_extract)
             #worker.signals.current_file_progression.connect(self.current_file_progression)
 
             # Execute
             self.thread_pool.start(worker)
-
-            #application_tmp_dir = self.extract(application_zip)
-            #if self.checkBox.isChecked() and application_tmp_dir:
-                #open_file(application_tmp_dir)
 
     def on_search_lineedit_content_changed(self):
         self.search_label = self.lineEdit.text()
@@ -205,33 +208,11 @@ class MainWindow(QMainWindow):
         command = ["xdg-open"]
         subprocess.call(command)
 
-    def extract(self, archive_file):
-        application_name = application_name = os.path.basename(archive_file).strip(self.archive_extension)
-        application_tmp_dir = os.path.join(self.tmp_folder_path, application_name)
+    def clean_tmp_dir(self):
+        pass
 
-        # Création du dossier de l'application
-        if os.path.exists(application_tmp_dir):
-            shutil.rmtree(application_tmp_dir)
-
-        else:
-            os.makedirs(application_tmp_dir)
-
-        # Extraction du dossier
-        try:
-            with zipfile.ZipFile(archive_file, "r") as archive_file:
-                archive_file.extractall(application_tmp_dir)
-
-            return application_tmp_dir
-
-        except(IOError, zipfile.BadZipfile) as e:
-            msgbox = QMessageBox()
-            msgbox.setWindowTitle("Erreur problème d'extraction")
-            msgbox.setText("Erreur problème d'extraction")
-            msgbox.setDetailedText(str(e))
-            msgbox.setIcon(QMessageBox.Critical)
-            msgbox.exec()
-
-            return None
+    def closeEvent(self, event):
+        event.accept()
 
 
 def open_file(path):
