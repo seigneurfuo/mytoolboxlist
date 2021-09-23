@@ -1,8 +1,8 @@
 #!/bin/env python3
 
 # Date de création: 2020.08.21
-# Date de modification: 2021.08.05
-
+# Date de modification: 2021.09.23
+import json
 import sys
 import os
 import shutil
@@ -12,34 +12,66 @@ import subprocess
 import configparser
 import re
 
+from pathlib import Path
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.uic import loadUi
 from PyQt5.QtWidgets import QMainWindow, QMessageBox, QTableWidgetItem
 from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot, Qt, QObject, pyqtSignal
 
 
+class ApplicationArchive:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.foldername = Path(self.filepath).parent.name
+        self.name = os.path.splitext(Path(self.filepath).name)[0]
+
+        self.description = str()
+        self.os = str()
+
+        # self.load_metadata_from_ini()
+
+    def __repr__(self):
+        return self.filepath
+
+    def load_metadata_from_ini(self):
+        # TODO:
+        if Path(metadata_filepath).exists():
+            # On charge le fichier INI
+            metadata = configparser.ConfigParser()
+            metadata.read(metadata_filepath)
+
+            mapper = [(self.description, 'description'),
+                      (self.os, 'os')]
+
+            for map_data in mapper:
+                if map_data[1] in metadata["software"].keys():
+                    map_data[0] = map_data[1]
+
+
 class ExtractArchiveWorkerSignals(QObject):
-    '''
+    """
     Defines the signals available from a running worker thread.
 
     file_progression: int progress complete,from 0-100
-    '''
+    """
 
-    current_file_progression = pyqtSignal(int) # pourcentage actuel
+    current_file_progression = pyqtSignal(int, str)  # pourcentage actuel
+
 
 class ExtractArchiveWorker(QRunnable):
-    def __init__(self, tmp_folder_path, archive_extension, application_object, open_folder_after_extract):
+    def __init__(self, tmp_folder_path, application_archive, open_folder_after_extract):
         super(ExtractArchiveWorker, self).__init__()
         self.signals = ExtractArchiveWorkerSignals()
 
         self.tmp_folder_path = tmp_folder_path
-        self.archive_extension = archive_extension
-        self.application_object = application_object
+        self.application_archive = application_archive
         self.open_folder_after_extract = open_folder_after_extract
 
     @pyqtSlot()
     def run(self):
-        application_tmp_dir = os.path.join(self.tmp_folder_path, self.application_object['name'])
+        application_tmp_dir = Path(self.tmp_folder_path) / self.application_archive.name
+
         # Création du dossier de l'application
         if os.path.exists(application_tmp_dir):
             shutil.rmtree(application_tmp_dir)
@@ -49,24 +81,24 @@ class ExtractArchiveWorker(QRunnable):
 
         # Extraction du dossier (https://usefulscripting.network/python/extracting-files-with-progress/)
         try:
-            with zipfile.ZipFile(self.application_object['filepath'], "r") as archive_file:
+            with zipfile.ZipFile(self.application_archive.filepath, "r") as archive_file:
                 total_elements = len(archive_file.namelist())
 
                 for index, filename in enumerate(archive_file.namelist()):
                     percentage = int(index * (100 / total_elements))
 
-                    msg = "Extraction fichier {} sur {} ({}%) => {}".format(index + 1, total_elements, percentage, filename)
-                    print(msg)
+                    # msg = "Extraction fichier {} sur {} ({}%) => {}".format(index + 1, total_elements, percentage, filename)
+                    # print(msg)
+                    path = os.path.join(self.application_archive.name, filename)
+                    self.signals.current_file_progression.emit(percentage, path)
 
                     archive_file.extract(member=filename, path=application_tmp_dir)
 
-                    self.signals.current_file_progression.emit(percentage)
-
                 print("Terminé !")
+                self.signals.current_file_progression.emit(0, "Terminé !")
 
                 if self.open_folder_after_extract:
                     open_file(application_tmp_dir)
-
 
         except(IOError, zipfile.BadZipfile) as e:
             msgbox = QMessageBox()
@@ -75,7 +107,6 @@ class ExtractArchiveWorker(QRunnable):
             msgbox.setDetailedText(str(e))
             msgbox.setIcon(QMessageBox.Critical)
             msgbox.exec()
-
 
 
 class MainWindow(QMainWindow):
@@ -128,47 +159,15 @@ class MainWindow(QMainWindow):
         filters = (self.archive_extension)
 
         for root, directories, filenames in os.walk(self.applications_path):
-            directories = human_sort(directories)
+            # directories = human_sort(directories)
             for filename in human_sort(filenames):
                 if filename.endswith(filters):
                     file_path = os.path.join(root, filename)
 
-                    application = self.get_application_metadata(file_path)
-                    ret_list.append(application)
+                    app_archive = ApplicationArchive(file_path)  # self.get_application_metadata(file_path)
+                    ret_list.append(app_archive)
 
         return ret_list
-
-    def get_application_metadata(self, file_path):
-        foldername = os.path.basename(os.path.dirname(file_path))
-        application_name = os.path.basename(file_path).removesuffix(self.archive_extension) # Spécifique Python 3.9 !
-        application = \
-        {
-            "filepath": file_path,
-            "foldername": foldername,
-            "name": application_name,
-            "description": "",
-            "os": ""
-        }
-
-        # Si on à des fichier de métadonnées on le charge ici
-        metadata_filepath = file_path.removesuffix(self.archive_extension) + self.metadata_file_extension  # Spécifique Python 3.9 !
-        if os.path.isfile(metadata_filepath):
-            try:
-                metadata = configparser.ConfigParser()
-                metadata.read(metadata_filepath)
-                # Spécifique Python 3.9 !
-
-                application |= \
-                {
-                    #"name":         metadata["software"]["name"],
-                    "description":  metadata["software"]["description"],
-                    "os":           metadata["software"]["os"]
-                }
-
-            except:
-                pass
-
-        return application
 
     def fill_table(self):
         applications = self.get_applications_list()
@@ -176,24 +175,30 @@ class MainWindow(QMainWindow):
         self.tableWidget.clearContents()
         self.tableWidget.setRowCount(len(applications))
 
-
-        for index, application_object in enumerate(applications):
-            item = QTableWidgetItem(application_object["name"])
-            item.setData(Qt.UserRole, application_object)
+        for index, application_archive in enumerate(applications):
+            item = QTableWidgetItem(application_archive.name)
+            item.setData(Qt.UserRole, index)
             self.tableWidget.setItem(index, 0, item)
-            self.tableWidget.setItem(index, 1, QTableWidgetItem(application_object["foldername"]))
-            self.tableWidget.setItem(index, 2, QTableWidgetItem(application_object["description"]))
+            self.tableWidget.setItem(index, 1, QTableWidgetItem(application_archive.foldername))
+            self.tableWidget.setItem(index, 2, QTableWidgetItem(application_archive.description))
 
         # Taille de cellules s'adaptant au contenu
         self.tableWidget.resizeColumnsToContents()
 
+    def extraction_progress_update(self, percentage, filename):
+        self.progressbar.setValue(int(percentage))
+        self.label_2.setText(filename)
+
     def on_launch_button_click(self):
         current_row = self.tableWidget.currentRow()
         if current_row != -1:
+            #FIXME: data marche pas, met la meme valeur à tout le monde
+            #id_ = self.tableWidget.itemAt(x, current_row).data(Qt.UserRole)
+            application_archive = self.applications_list[current_row]
             open_folder_after_extract = self.checkBox.isChecked()
-            application_object = self.tableWidget.itemAt(0, self.tableWidget.currentRow()).data(Qt.UserRole)
-            worker = ExtractArchiveWorker(self.tmp_folder_path, self.archive_extension, application_object, open_folder_after_extract)
-            #worker.signals.current_file_progression.connect(self.current_file_progression)
+
+            worker = ExtractArchiveWorker(self.tmp_folder_path, application_archive, open_folder_after_extract)
+            worker.signals.current_file_progression.connect(self.extraction_progress_update)
 
             # Execute
             self.thread_pool.start(worker)
@@ -234,7 +239,7 @@ def human_sort(elements):
 
 def main():
     __application_name__ = "Liste des outils"
-    __version__ = "2021.09.08"
+    __version__ = "2021.09.23"
 
     app = QApplication(sys.argv)
     mainwindow = MainWindow()
