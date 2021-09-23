@@ -191,7 +191,7 @@ class MainWindow(QMainWindow):
         current_row = self.tableWidget.currentRow()
         if current_row != -1:
             open_folder_after_extract = self.checkBox.isChecked()
-            application_object = self.tableWidget.currentItem().data(Qt.UserRole)
+            application_object = self.tableWidget.itemAt(0, self.tableWidget.currentRow()).data(Qt.UserRole)
             worker = ExtractArchiveWorker(self.tmp_folder_path, self.archive_extension, application_object, open_folder_after_extract)
             #worker.signals.current_file_progression.connect(self.current_file_progression)
 
