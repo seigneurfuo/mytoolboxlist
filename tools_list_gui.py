@@ -15,23 +15,75 @@ import re
 from PyQt5.QtWidgets import QApplication
 from PyQt5.uic import loadUi
 from PyQt5.QtWidgets import QMainWindow, QMessageBox, QTableWidgetItem
-from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot, Qt
+from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot, Qt, QObject, pyqtSignal
 
+
+class ExtractArchiveWorkerSignals(QObject):
+    '''
+    Defines the signals available from a running worker thread.
+
+    file_progression: int progress complete,from 0-100
+    '''
+
+    current_file_progression = pyqtSignal(int) # pourcentage actuel
 
 class ExtractArchiveWorker(QRunnable):
+    def __init__(self, tmp_folder_path, archive_extension, application_object):
+        super(ExtractArchiveWorker, self).__init__()
+        self.signals = ExtractArchiveWorkerSignals()
+
+        self.tmp_folder_path = tmp_folder_path
+        self.archive_extension = archive_extension
+        self.application_object = application_object
+
     @pyqtSlot()
     def run(self):
-        pass
+        application_tmp_dir = os.path.join(self.tmp_folder_path, self.application_object['name'])
+        # Création du dossier de l'application
+        if os.path.exists(application_tmp_dir):
+            shutil.rmtree(application_tmp_dir)
+
+        else:
+            os.makedirs(application_tmp_dir)
+
+        # Extraction du dossier (https://usefulscripting.network/python/extracting-files-with-progress/)
+        try:
+            with zipfile.ZipFile(self.application_object['filepath'], "r") as archive_file:
+                total_elements = len(archive_file.namelist())
+
+                for index, filename in enumerate(archive_file.namelist()):
+                    percentage = int(index * (100 / total_elements))
+
+                    msg = "Extraction fichier {} sur {} ({}%) => {}".format(index + 1, total_elements, percentage, filename)
+                    print(msg)
+
+                    archive_file.extract(member=filename, path=application_tmp_dir)
+
+                    self.signals.current_file_progression.emit(percentage)
+
+                print("Terminé !")
+
+
+        except(IOError, zipfile.BadZipfile) as e:
+            msgbox = QMessageBox()
+            msgbox.setWindowTitle("Erreur problème d'extraction")
+            msgbox.setText("Erreur problème d'extraction")
+            msgbox.setDetailedText(str(e))
+            msgbox.setIcon(QMessageBox.Critical)
+            msgbox.exec()
+
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
 
+        self.current_file_progression = 0
+
         # Config
         config_file_path = os.path.join(os.path.dirname(__file__), "config.ini")
         config = configparser.ConfigParser()
-        config.read(config_file_path)
+        config.read(config_file_path, encoding="utf-8")
 
         self.applications_path = config["config"]["root"]
         if not os.path.exists(self.applications_path):
@@ -117,12 +169,13 @@ class MainWindow(QMainWindow):
         self.tableWidget.clearContents()
         self.tableWidget.setRowCount(len(applications))
 
-        for index, application in enumerate(applications):
-            item = QTableWidgetItem(application["name"])
-            item.setData(Qt.UserRole, application["filepath"])
+
+        for index, application_object in enumerate(applications):
+            item = QTableWidgetItem(application_object["name"])
+            item.setData(Qt.UserRole, application_object)
             self.tableWidget.setItem(index, 0, item)
-            self.tableWidget.setItem(index, 1, QTableWidgetItem(application["foldername"]))
-            self.tableWidget.setItem(index, 2, QTableWidgetItem(application["description"]))
+            self.tableWidget.setItem(index, 1, QTableWidgetItem(application_object["foldername"]))
+            self.tableWidget.setItem(index, 2, QTableWidgetItem(application_object["description"]))
 
         # Taille de cellules s'adaptant au contenu
         self.tableWidget.resizeColumnsToContents()
@@ -130,11 +183,17 @@ class MainWindow(QMainWindow):
     def on_launch_button_click(self):
         current_row = self.tableWidget.currentRow()
         if current_row != -1:
-            application_zip = self.tableWidget.currentItem().data(Qt.UserRole)
+            application_object = self.tableWidget.currentItem().data(Qt.UserRole)
 
-            application_tmp_dir = self.extract(application_zip)
-            if self.checkBox.isChecked() and application_tmp_dir:
-                open_file(application_tmp_dir)
+            worker = ExtractArchiveWorker(self.tmp_folder_path, self.archive_extension, application_object)
+            #worker.signals.current_file_progression.connect(self.current_file_progression)
+
+            # Execute
+            self.thread_pool.start(worker)
+
+            #application_tmp_dir = self.extract(application_zip)
+            #if self.checkBox.isChecked() and application_tmp_dir:
+                #open_file(application_tmp_dir)
 
     def on_search_lineedit_content_changed(self):
         self.search_label = self.lineEdit.text()
@@ -196,10 +255,10 @@ def main():
     __application_name__ = "Liste des outils"
     __version__ = "2021.09.08"
 
-    application = QApplication(sys.argv)
+    app = QApplication(sys.argv)
     mainwindow = MainWindow()
     mainwindow.setWindowTitle("Liste des outils - {}".format(__version__))
-    sys.exit(application.exec_())
+    sys.exit(app.exec_())
 
 
 main()
