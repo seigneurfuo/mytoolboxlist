@@ -17,7 +17,8 @@ from pathlib import Path
 from PyQt5.QtWidgets import QApplication
 from PyQt5.uic import loadUi
 from PyQt5.QtWidgets import QMainWindow, QMessageBox, QTableWidgetItem
-from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot, Qt, QObject, pyqtSignal
+from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot, Qt, QObject, pyqtSignal, QUrl
+from PyQt5.QtGui import QDesktopServices
 
 
 class ApplicationArchive:
@@ -56,7 +57,7 @@ class ExtractArchiveWorkerSignals(QObject):
     file_progression: int progress complete,from 0-100
     """
 
-    current_file_progression = pyqtSignal(int, str)  # pourcentage actuel
+    current_file_progression = pyqtSignal(int, str) # pourcentage actuel
 
 
 class ExtractArchiveWorker(QRunnable):
@@ -221,12 +222,7 @@ class MainWindow(QMainWindow):
 
 
 def open_file(path):
-    if platform.system() == "Windows":
-        os.startfile(path)
-    elif platform.system() == "Darwin":
-        subprocess.Popen(["open", path])
-    else:
-        subprocess.Popen(["xdg-open", path])
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
 def human_sort(elements):
